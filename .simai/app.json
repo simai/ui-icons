@@ -1,0 +1,8 @@
+{
+  "schema": "simai-app/1",
+  "profile": "node",
+  "node": {"version": "22", "start": "node src/server.js", "install": "yarn"},
+  "python": {"requirements": "requirements.txt"},
+  "shared": ["cache"],
+  "health": {"path": "/health", "timeout": 1800}
+}

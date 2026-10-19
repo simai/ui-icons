@@ -43,8 +43,21 @@ PATH="$PWD/.venv/bin:$PATH" npm start
 - With `PREBUILD_STATIC_SOURCES=1` it prepares static instances of every
   style, weight and fill before it starts listening: about 6 minutes on
   the first start. They are kept in `cache/`, so later starts are fast.
-- Production runs `npm run start:prod` (`.env.production`) under pm2,
-  behind nginx.
+- Production deploys with [simai-env](https://github.com/simai/simai-env)
+  (1.16 or newer) from `.simai/app.json`:
+  - the node profile runs `node src/server.js` as a systemd service under
+    the site account, behind nginx;
+  - systemd provides PORT and HOST from the simai-managed `.env`, seeded
+    once from `.env.example`;
+  - `requirements.txt` goes into a `.venv` in the release, with `.venv/bin`
+    on the service `PATH`;
+  - `cache/` is shared across releases;
+  - a release goes live only after `/health` answers. The health timeout
+    is 1800 s, because the first prebuild on one vCPU is slow.
+- The service resolves `cache/` and the font paths against its working
+  directory, so it must start in the release root.
+- Until icons.simai.io is cut over to the simai-env server, the old server
+  runs `npm run start:prod` (`.env.production`) under pm2.
 
 Settings, all read from the environment (`.env.example` holds production's
 values):

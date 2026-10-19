@@ -1,0 +1,10 @@
+SIMAI Framework icon service (simai/ui-icons)
+Copyright 2026 Rim Zabarov and contributors
+
+The service code is licensed under the Apache License, Version 2.0 (LICENSE).
+
+src/fonts/Material-Outlined.woff2, Material-Rounded.woff2 and
+Material-Sharp.woff2 are Material Symbols Outlined, Rounded and Sharp,
+version 2.932, Copyright 2026 Google LLC, from
+https://github.com/google/material-design-icons, licensed under the Apache
+License, Version 2.0.

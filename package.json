@@ -1,0 +1,27 @@
+{
+  "name": "simai-font-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file=.env src/server.js",
+    "start": "node --env-file=.env src/server.js",
+    "start:dev": "node --env-file=.env src/server.js",
+    "start:prod": "node --env-file=.env.production src/server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^4.21.2",
+    "fonteditor-core": "^2.6.3",
+    "subset-font": "^2.5.0"
+  },
+  "description": "The SIMAI Framework icon service: Material Symbols subsets on demand (icons.simai.io).",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/simai/ui-icons.git"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

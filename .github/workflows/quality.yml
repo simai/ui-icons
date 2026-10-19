@@ -1,0 +1,44 @@
+name: Quality
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Installs the locked dependencies and starts the service without the static
+# prebuild, then asks it for a stylesheet and the font it names.
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+      - run: npx --yes yarn@1.22.22 install --frozen-lockfile --non-interactive
+      - run: pip install -r requirements.txt
+      - run: node --check src/server.js
+      - name: Start the service and request a subset
+        run: |
+          set -euo pipefail
+          cp .env.example .env
+          sed -i 's/^PREBUILD_STATIC_SOURCES=.*/PREBUILD_STATIC_SOURCES=0/; s/^SOURCE_MODE=.*/SOURCE_MODE=raw/' .env
+          node --env-file=.env src/server.js > service.log 2>&1 &
+          for i in $(seq 1 60); do curl -fsS http://127.0.0.1:3189/health >/dev/null && break; sleep 2; done
+          curl -fsS http://127.0.0.1:3189/health
+          curl -fsS "http://127.0.0.1:3189/ms/css?icon_names=check,language&type=outlined" -o subset.css
+          font=$(grep -oE '/ms/font/[a-f0-9]+\.woff2' subset.css | head -1)
+          test -n "$font"
+          curl -fsS "http://127.0.0.1:3189$font" -o subset.woff2
+          test "$(stat -c %s subset.woff2)" -gt 0
+          echo "subset: $(stat -c %s subset.woff2) bytes"
+      - if: failure()
+        run: cat service.log

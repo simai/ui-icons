@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Иконки SIMAI Framework</title>
+<meta name="description" content="Сервис иконок SIMAI Framework: шрифты Material Symbols, нарезанные под иконки страницы.">
+<link rel="canonical" href="https://icons.simai.io/">
+<link rel="stylesheet" href="/ms/css?icon_names=bolt,check,code,dark_mode,devices,home,language,light_mode,palette,search,settings,speed&amp;type=outlined">
+<style>
+  :root { --bg: #fff; --fg: #1b1b1f; --muted: #5d5e66; --line: #e3e2e8; --card: #f6f5fa; --accent: #005bbe; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #121316; --fg: #e3e2e7; --muted: #a7a8b1; --line: #2c2d33; --card: #1b1c20; --accent: #a6c8ff; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-inline-size: 56rem; margin: 0 auto; padding: 48px 16px 64px; }
+  h1 { font-size: clamp(1.75rem, 1.2rem + 2vw, 2.5rem); line-height: 1.15; margin: 0 0 12px; }
+  h2 { font-size: 1.25rem; margin: 40px 0 12px; }
+  p { margin: 0 0 12px; color: var(--muted); max-inline-size: 42rem; }
+  a { color: var(--accent); }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.875rem; }
+  pre { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; overflow-x: auto; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 12px; padding: 0; margin: 0; list-style: none; }
+  .grid li { display: grid; justify-items: center; gap: 6px; padding: 16px 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+  .grid i { font-family: "Material Symbols Outlined Subset", "Material Symbols Outlined"; font-style: normal; font-size: 32px; line-height: 1; color: var(--fg); font-feature-settings: "liga"; }
+  .grid span { font-size: 0.75rem; color: var(--muted); }
+  table { border-collapse: collapse; inline-size: 100%; font-size: 0.875rem; }
+  th, td { text-align: start; padding: 8px 10px; border-block-end: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  footer { margin-block-start: 48px; font-size: 0.875rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Иконки SIMAI Framework</h1>
+  <p>Сервис отдаёт шрифты Material Symbols, нарезанные ровно под те иконки, которые использует страница. Вместо нескольких мегабайт браузер загружает несколько килобайт.</p>
+  <p>Отдельно подключать ничего не нужно: SIMAI Framework сам запрашивает у сервиса нужный набор, когда на странице появляются <code>&lt;sf-icon&gt;</code>.</p>
+
+  <h2>Пример</h2>
+  <p>Эти иконки нарисованы шрифтом, который только что нарезал этот сервис.</p>
+  <ul class="grid">
+    <li><i>home</i><span>home</span></li>
+    <li><i>search</i><span>search</span></li>
+    <li><i>settings</i><span>settings</span></li>
+    <li><i>language</i><span>language</span></li>
+    <li><i>palette</i><span>palette</span></li>
+    <li><i>light_mode</i><span>light_mode</span></li>
+    <li><i>dark_mode</i><span>dark_mode</span></li>
+    <li><i>devices</i><span>devices</span></li>
+    <li><i>code</i><span>code</span></li>
+    <li><i>speed</i><span>speed</span></li>
+    <li><i>bolt</i><span>bolt</span></li>
+    <li><i>check</i><span>check</span></li>
+  </ul>
+
+  <h2>Как запросить набор напрямую</h2>
+  <pre>&lt;link rel="stylesheet" href="https://icons.simai.io/ms/css?icon_names=home,search&amp;type=outlined"&gt;</pre>
+  <p>Стиль иконок задаёт <code>type</code>: <code>outlined</code>, <code>rounded</code> или <code>sharp</code>. Ещё можно указать заливку, насыщенность, градацию и оптический размер.</p>
+
+  <h2>Адреса</h2>
+  <table>
+    <thead><tr><th>Адрес</th><th>Что возвращает</th></tr></thead>
+    <tbody>
+      <tr><td><code>GET /ms/css</code></td><td>Стили с <code>@font-face</code> для запрошенных иконок.</td></tr>
+      <tr><td><code>GET /ms/font/&lt;hash&gt;.woff2</code></td><td>Нарезанный шрифт.</td></tr>
+      <tr><td><code>GET /ms/meta/&lt;hash&gt;</code></td><td>Описание собранного набора.</td></tr>
+      <tr><td><code>GET /health</code></td><td>Состояние сервиса.</td></tr>
+    </tbody>
+  </table>
+
+  <footer>Код сервиса — <a href="https://github.com/simai/ui-icons">github.com/simai/ui-icons</a>, лицензия Apache-2.0. Шрифты Material Symbols — Google, Apache-2.0. Все продукты SIMAI — <a href="https://simai.io/ru/">simai.io</a>.</footer>
+</main>
+</body>
+</html>

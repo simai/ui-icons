@@ -1753,6 +1753,12 @@ async function buildFontCssResult({ query, baseUrl }) {
   return manifest;
 }
 
+// The landing page: what the service is, a live sample, the routes.
+app.get('/', (_req, res) => {
+  res.set('Cache-Control', 'no-cache');
+  return res.sendFile(path.join(ROOT, 'public', 'index.html'));
+});
+
 app.get('/health', async (_req, res) => {
   res.json({
     ok: true,

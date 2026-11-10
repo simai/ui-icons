@@ -70,7 +70,32 @@ values):
   `FONT_SOURCE_PATH_SHARP`;
 - `CACHE_TTL_DAYS`, `CACHE_MAINTENANCE_INTERVAL_MS`, `MAX_ICON_COUNT`,
   `MAX_QUERY_LENGTH`;
-- `PYFTSUBSET_BIN`, `FONTTOOLS_BIN`, `PYTHON_BIN`.
+- `PYFTSUBSET_BIN`, `FONTTOOLS_BIN`, `PYTHON_BIN`;
+- `SUBSET_WORKERS` (default: CPU cores minus one, at most 4; `0` builds
+  in the main thread), `PREBUILD_ICON_NAMES` (`0` skips the vocabulary
+  warm-up).
+
+## How a subset is built
+
+- A new list is built by a subset worker (`src/subset-pool.js`,
+  `worker_threads`), never on the request thread: lists asked for at the
+  same time build side by side, and cached lists answer while they do.
+- Each name is shaped once against the source to find its ligature glyph,
+  at every corner of the source's design space (Material Symbols swaps some
+  glyphs by FILL). The subset keeps those glyphs and the letters, nothing
+  else (`src/subset-core.js`). A list with a name that does not shape to one
+  glyph falls back to subset-font's closure subset (every ligature the
+  letters can spell). The generator in a subset's meta says which:
+  `subset-core:glyphs` or `subset-core:closure`.
+- At start every worker decodes the default static sources and shapes the
+  SIMAI Framework's known icon names (`src/vocabulary/framework-icons.json`).
+
+Measured locally on 2026-11-10 (R074): 8 new lists of 40 names asked for
+together came back in 0.08-0.17 s each with 4 workers (0.25 s with one
+worker, 0.34 s in the main thread); before, all eight came back together
+at 15.6 s, and a cached list asked meanwhile waited 15.5 s. A 40-name
+subset is about 5 KB instead of about 245 KB; every name of the vocabulary
+draws pixel-identical to the source font.
 
 ## Status
 

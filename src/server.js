@@ -4,7 +4,7 @@ import cors from 'cors';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import subsetFont from 'subset-font';
+import { createSubsetPool, defaultPoolSize } from './subset-pool.js';
 import { createFont, woff2 } from 'fonteditor-core';
 
 const app = express();
@@ -50,6 +50,26 @@ const PREBUILD_STATIC_OPTICAL_SIZES = (
   .split(',')
   .map((value) => Number(value.trim()))
   .filter((value) => [20, 24, 40, 48].includes(value));
+// Subset workers (R074): new lists are built off the main thread, this many
+// at a time. 0 builds in the main thread.
+const SUBSET_WORKERS = Math.max(
+  0,
+  Number.isFinite(Number(process.env.SUBSET_WORKERS)) &&
+    process.env.SUBSET_WORKERS !== undefined &&
+    process.env.SUBSET_WORKERS !== ''
+    ? Math.floor(Number(process.env.SUBSET_WORKERS))
+    : defaultPoolSize(),
+);
+// The icon names warmed ahead of the requests (each worker decodes the
+// default static sources and shapes these names): the SIMAI Framework's own
+// vocabulary. PREBUILD_ICON_NAMES=0 skips it.
+const PREBUILD_ICON_NAMES = process.env.PREBUILD_ICON_NAMES !== '0';
+const ICON_VOCABULARY_PATH = path.join(
+  path.dirname(new URL(import.meta.url).pathname),
+  'vocabulary',
+  'framework-icons.json',
+);
+const subsetPool = createSubsetPool({ size: SUBSET_WORKERS });
 const SOURCE_MODE = ['prebuilt', 'raw'].includes(
   String(process.env.SOURCE_MODE || 'prebuilt').toLowerCase(),
 )
@@ -969,42 +989,75 @@ function runCommand(bin, args, options = {}) {
   });
 }
 
-async function subsetWithSubsetFont({
-  icons,
-  tmpPath,
-  sourceFontPath,
-  sourceFontBuffer = null,
-  hash = 'unknown',
-}) {
+// The subset of one list, built by a subset worker (src/subset-core.js):
+// the requested ligature glyphs only, or subset-font's closure subset for a
+// list some name of which does not shape to one glyph.
+async function subsetWithWorkers({ icons, tmpPath, sourceFontPath, keepSource = true, hash = 'unknown' }) {
   const totalStart = performance.now();
-  const textArg = icons.join(' ');
-  const readStart = performance.now();
-  const sourceBuffer =
-    sourceFontBuffer || (await getSourceFontBuffer(sourceFontPath));
+  const result = await subsetPool.run({ sourcePath: sourceFontPath, icons, keepSource });
   console.log(
-    `timing ${hash}: subset read ${formatDuration(readStart)} (${sourceBuffer.length} bytes)`,
+    `timing ${hash}: subset core ${formatDuration(totalStart)} (${result.buffer.length} bytes, ${result.mode}, ${icons.length} names)`,
   );
-
-  const subsetStart = performance.now();
-  const subsetBuffer = await subsetFont(sourceBuffer, textArg, {
-    targetFormat: 'woff2',
-    preserveNameIds: [1, 4], // Keep the family and subfamily names
-  });
-  console.log(
-    `timing ${hash}: subset core ${formatDuration(subsetStart)} (${subsetBuffer.length} bytes)`,
-  );
-
   const writeStart = performance.now();
-  await fs.writeFile(tmpPath, subsetBuffer);
+  await fs.writeFile(tmpPath, result.buffer);
   console.log(`timing ${hash}: subset write ${formatDuration(writeStart)}`);
-  console.log(
-    `timing ${hash}: subset total inner ${formatDuration(totalStart)}`,
-  );
   return {
-    command: `subset-font on ${sourceFontPath} with text "${textArg}"`,
+    command: `subset-core (${result.mode}) on ${sourceFontPath} for "${icons.join(' ')}"`,
+    mode: result.mode,
     stdout: '',
     stderr: '',
   };
+}
+
+async function readIconVocabulary() {
+  try {
+    const data = JSON.parse(await fs.readFile(ICON_VOCABULARY_PATH, 'utf8'));
+    // Not normalizeIconNames: the vocabulary may hold more names than one
+    // request may ask for (MAX_ICON_COUNT).
+    return Array.isArray(data.icons)
+      ? [...new Set(data.icons.map((name) => String(name).trim()).filter((name) => /^[a-z0-9_]+$/.test(name)))]
+      : [];
+  } catch (error) {
+    console.warn(`icon vocabulary not read: ${error.message}`);
+    return [];
+  }
+}
+
+// Every worker decodes the static sources a page asks for by default (each
+// type at the default weight, fill 0 and mixed) and shapes the Framework's
+// vocabulary against them, so a new list of known names costs the subset and
+// its encoding only.
+async function warmIconVocabulary() {
+  if (!PREBUILD_ICON_NAMES) {
+    console.log('icon vocabulary warm-up skipped (PREBUILD_ICON_NAMES=0)');
+    return;
+  }
+  const start = performance.now();
+  const icons = await readIconVocabulary();
+  if (!icons.length) return;
+  const names = await fs.readdir(STATIC_SOURCE_CACHE_DIR).catch(() => []);
+  const sources = Object.keys(FONT_TYPE_CONFIG).flatMap((type) =>
+    [
+      `source-${type}-fill-0-grad-${DEFAULT_GRADE}-opsz-${DEFAULT_OPTICAL_SIZE}-wght-${DEFAULT_WEIGHT}-`,
+      `source-${type}-fill-0-1-grad-${DEFAULT_GRADE}-opsz-${DEFAULT_OPTICAL_SIZE}-wght-${DEFAULT_WEIGHT}-`,
+    ]
+      .map((prefix) => names.find((name) => name.startsWith(prefix) && name.endsWith('.woff2')))
+      .filter(Boolean)
+      .map((name) => path.join(STATIC_SOURCE_CACHE_DIR, name)),
+  );
+  for (const sourcePath of sources) {
+    try {
+      const [first] = await subsetPool.warm({ sourcePath, icons });
+      console.log(
+        `icon vocabulary warmed: ${path.basename(sourcePath)} (${first?.shaped}/${first?.names} names shape to one glyph)`,
+      );
+    } catch (error) {
+      console.warn(`icon vocabulary warm-up failed for ${sourcePath}: ${error.message}`);
+    }
+  }
+  console.log(
+    `icon vocabulary ready: ${icons.length} names, ${sources.length} sources, ${subsetPool.size} workers (${formatDuration(start)})`,
+  );
 }
 
 function buildInstancerAxisArg(axisName, spec) {
@@ -1336,7 +1389,7 @@ async function generateSubsetFont({
   const rootSourceStat = await getSourceFontStat(rootSourceFontPath);
   console.log(`timing ${hash}: source stat ${formatDuration(statStart)}`);
 
-  let generator = 'subset-font';
+  let generator = 'subset-core';
   let command = null;
   let commandStdout = '';
   let commandStderr = '';
@@ -1363,20 +1416,19 @@ async function generateSubsetFont({
       instancerCommand = instanced.command;
       instancerStdout = instanced.stdout;
       instancerStderr = instanced.stderr;
-      generator = 'fonteditor-core+subset-font';
+      generator = 'fonteditor-core+subset-core';
     }
 
     const subsetStart = performance.now();
-    const run = await subsetWithSubsetFont({
+    const run = await subsetWithWorkers({
       hash,
       icons,
       tmpPath,
       sourceFontPath: subsetSourcePath,
-      sourceFontBuffer:
-        subsetSourcePath === rootSourceFontPath
-          ? await getSourceFontBuffer(rootSourceFontPath)
-          : null,
+      // A per-request instance is decoded for this list only.
+      keepSource: subsetSourcePath === sourceFontPath,
     });
+    generator = `${generator}:${run.mode}`;
     console.log(`timing ${hash}: subset ${formatDuration(subsetStart)}`);
     command = run.command;
     commandStdout = run.stdout;
@@ -1783,6 +1835,8 @@ app.get('/health', async (_req, res) => {
     prebuildStaticOpticalSizes: PREBUILD_STATIC_OPTICAL_SIZES,
     sourceMode: SOURCE_MODE,
     inflight: inflight.size,
+    subsetWorkers: subsetPool.stats(),
+    prebuildIconNames: PREBUILD_ICON_NAMES,
   });
 });
 
@@ -2014,6 +2068,9 @@ await ensureDirs();
 await warmSourceFontCache();
 await warmDefaultStaticSourceIndex();
 await warmStaticWeightSources();
+// Not awaited: the service answers while the workers warm up; a list asked
+// for meanwhile shapes its own names.
+void warmIconVocabulary();
 scheduleCacheMaintenance();
 
 app.listen(PORT, HOST, () => {
@@ -2026,6 +2083,7 @@ app.listen(PORT, HOST, () => {
   console.log(`FONTTOOLS_BIN=${FONTTOOLS_BIN}`);
   console.log(`SUBSET_FALLBACK_MODE=${SUBSET_FALLBACK_MODE}`);
   console.log(`SOURCE_MODE=${SOURCE_MODE}`);
+  console.log(`SUBSET_WORKERS=${subsetPool.size}`);
   console.log(`CACHE_TTL_DAYS=${CACHE_TTL_DAYS}`);
   console.log(`CACHE_MAINTENANCE_INTERVAL_MS=${CACHE_MAINTENANCE_INTERVAL_MS}`);
   console.log(`PREBUILD_STATIC_SOURCES=${PREBUILD_STATIC_SOURCES ? '1' : '0'}`);

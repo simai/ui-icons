@@ -13,6 +13,8 @@
     "cors": "^2.8.6",
     "express": "^4.21.2",
     "fonteditor-core": "^2.6.3",
+    "fontverter": "^2.0.0",
+    "harfbuzzjs": "^0.10.3",
     "subset-font": "^2.5.0"
   },
   "description": "The SIMAI Framework icon service: Material Symbols subsets on demand (icons.simai.io).",

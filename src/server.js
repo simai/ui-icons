@@ -64,6 +64,10 @@ const SUBSET_WORKERS = Math.max(
 // default static sources and shapes these names): the SIMAI Framework's own
 // vocabulary. PREBUILD_ICON_NAMES=0 skips it.
 const PREBUILD_ICON_NAMES = process.env.PREBUILD_ICON_NAMES !== '0';
+// SUBSET_GLYPHS=0 builds every list as before R074 (subset-font's closure
+// subset, every ligature the letters spell), still in the workers: the switch
+// back without a redeploy.
+const SUBSET_GLYPHS = process.env.SUBSET_GLYPHS !== '0';
 const ICON_VOCABULARY_PATH = path.join(
   path.dirname(new URL(import.meta.url).pathname),
   'vocabulary',
@@ -994,7 +998,7 @@ function runCommand(bin, args, options = {}) {
 // list some name of which does not shape to one glyph.
 async function subsetWithWorkers({ icons, tmpPath, sourceFontPath, keepSource = true, hash = 'unknown' }) {
   const totalStart = performance.now();
-  const result = await subsetPool.run({ sourcePath: sourceFontPath, icons, keepSource });
+  const result = await subsetPool.run({ sourcePath: sourceFontPath, icons, keepSource, glyphsOnly: SUBSET_GLYPHS });
   console.log(
     `timing ${hash}: subset core ${formatDuration(totalStart)} (${result.buffer.length} bytes, ${result.mode}, ${icons.length} names)`,
   );
@@ -1837,6 +1841,7 @@ app.get('/health', async (_req, res) => {
     inflight: inflight.size,
     subsetWorkers: subsetPool.stats(),
     prebuildIconNames: PREBUILD_ICON_NAMES,
+    subsetGlyphs: SUBSET_GLYPHS,
   });
 });
 
@@ -2084,6 +2089,7 @@ app.listen(PORT, HOST, () => {
   console.log(`SUBSET_FALLBACK_MODE=${SUBSET_FALLBACK_MODE}`);
   console.log(`SOURCE_MODE=${SOURCE_MODE}`);
   console.log(`SUBSET_WORKERS=${subsetPool.size}`);
+  console.log(`SUBSET_GLYPHS=${SUBSET_GLYPHS ? '1' : '0'}`);
   console.log(`CACHE_TTL_DAYS=${CACHE_TTL_DAYS}`);
   console.log(`CACHE_MAINTENANCE_INTERVAL_MS=${CACHE_MAINTENANCE_INTERVAL_MS}`);
   console.log(`PREBUILD_STATIC_SOURCES=${PREBUILD_STATIC_SOURCES ? '1' : '0'}`);

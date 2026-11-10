@@ -73,7 +73,8 @@ values):
 - `PYFTSUBSET_BIN`, `FONTTOOLS_BIN`, `PYTHON_BIN`;
 - `SUBSET_WORKERS` (default: CPU cores minus one, at most 4; `0` builds
   in the main thread), `PREBUILD_ICON_NAMES` (`0` skips the vocabulary
-  warm-up).
+  warm-up), `SUBSET_GLYPHS` (`0` builds every list as subset-font's
+  closure subset, as before 2026-11-10, still in the workers).
 
 ## How a subset is built
 

@@ -183,20 +183,20 @@ async function shapesEveryName(ttf, icons) {
  * Subsets sourcePath (woff2 or TrueType) to the icons named.
  * Answers {buffer (woff2), mode: 'glyphs' | 'closure', glyphs}.
  */
-export async function subsetIcons({ sourcePath, icons, preserveNameIds = [1, 4], keepSource = true }) {
+export async function subsetIcons({ sourcePath, icons, preserveNameIds = [1, 4], keepSource = true, glyphsOnly = true }) {
   const source = await loadSource(sourcePath, keepSource);
   try {
-    return await subsetFromSource(source, icons, preserveNameIds);
+    return await subsetFromSource(source, icons, preserveNameIds, glyphsOnly);
   } finally {
     if (!keepSource) source.shaping.destroy();
   }
 }
 
-async function subsetFromSource(source, icons, preserveNameIds) {
+async function subsetFromSource(source, icons, preserveNameIds, glyphsOnly = true) {
   const h = await hb();
   const text = icons.join(' ');
   const glyphs = icons.map((name) => ligatureGlyphs(h, source, name));
-  if (glyphs.every((found) => found !== null)) {
+  if (glyphsOnly && glyphs.every((found) => found !== null)) {
     const ttf = await subsetGlyphs(source.ttf, {
       text,
       glyphs: [0, ...glyphs.flat()],

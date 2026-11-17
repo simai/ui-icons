@@ -625,13 +625,24 @@ function buildHeaderManifest(result) {
   };
 }
 
+// A proxy refuses a response whose headers outgrow its buffer (nginx: 4-8 KB,
+// answered as 502). An origin's accumulated set can hold hundreds of names, so
+// the manifest header carries the name list only while it stays small; above
+// that it carries iconCount and iconsOmitted, and the runtime falls back to the
+// names it asked for.
+const MANIFEST_HEADER_MAX_BYTES = 3072;
+
+function encodeManifestHeader(result) {
+  const full = encodeHeaderJson(buildHeaderManifest(result));
+  if (Buffer.byteLength(full) <= MANIFEST_HEADER_MAX_BYTES) return full;
+  const { icons, ...rest } = buildHeaderManifest(result);
+  return encodeHeaderJson({ ...rest, iconsOmitted: true });
+}
+
 function setFontResponseHeaders(res, result) {
   res.setHeader('X-SIMAI-Font-Hash', result.hash);
   res.setHeader('X-SIMAI-Font-Mode', result.mode);
-  res.setHeader(
-    'X-SIMAI-Font-Manifest',
-    encodeHeaderJson(buildHeaderManifest(result)),
-  );
+  res.setHeader('X-SIMAI-Font-Manifest', encodeManifestHeader(result));
 }
 
 function buildFontManifest({ payload, mode, fonts, css, baseUrl }) {

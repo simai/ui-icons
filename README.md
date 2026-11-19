@@ -15,7 +15,7 @@ The Framework's client side is in
 | Route | What it returns |
 |---|---|
 | `GET /health` | The service state and its configuration. |
-| `GET\|POST /ms/css` | A stylesheet with `@font-face` for the requested icons (`icon_names`, `type` = outlined, rounded or sharp, plus fill, weight, grade and optical size). |
+| `GET\|POST /ms/css` | A stylesheet with `@font-face` for the requested icons (`icon_names`, `type` = outlined, rounded or sharp, plus `fill`, `weight`, `grad` and `opsz`, see [Axes](#axes)). |
 | `GET\|POST /ms/build` | Builds a subset and returns its manifest. |
 | `GET /ms/font/:hash.woff2` | A built subset. |
 | `GET /ms/meta/:hash` | The manifest of a built subset. |
@@ -25,12 +25,47 @@ The Framework's client side is in
 Responses carry `X-SIMAI-Font-Hash`, `X-SIMAI-Font-Mode` and
 `X-SIMAI-Font-Manifest`.
 
+## Axes
+
+A request names the axes by the font's tags in lower case: `weight` (or
+`wght`), `fill`, `grad`, `opsz`. A value is one number (`opsz=20`), a list
+(`grad=-25,0`) or a range (`opsz=20..48`); a value or a range past the
+Material Symbols design space (GRAD -25..200, opsz 20..48) is clamped to it.
+
+- Weight picks the static faces (one font per weight).
+- A fixed fill, grade or optical size cuts a static instance at that point.
+- A range of fill, grade or optical size stays a variable axis in the subset,
+  limited to the range: one font draws every point in it, and each icon picks
+  its own with `font-variation-settings`. Since 0.2.0 grade and optical size
+  are kept as FILL always was; before, a range of either was dropped and the
+  font was cut at GRAD 0 and opsz 24.
+- The SIMAI Framework asks for `grad=-25..0` (its light and dark themes) and
+  `opsz=20..48` (every icon size) on every page, widened to an author's grade.
+  A static source for each range is cut once (an instancer run of 20-35 s per
+  weight and fill on a laptop) and kept in `cache/sources`;
+  `PREBUILD_FRAMEWORK_RANGES` prepares the Framework's after the service
+  starts listening.
+- `grade`, `optical_size`, `optical-size` and `opticalsize` are read as
+  aliases of `grad` and `opsz` until 2027-01-01 (the Framework sent those
+  names, which the service never read); the service's own name wins when a
+  request carries both. Each alias read is logged once per process.
+
+Measured locally on 2026-11-19 (subset bytes, weights 400 and 500 together):
+
+| Icon set | Before (GRAD 0, opsz 24) | grad -25..0, opsz 20..48 | grad -25..200, opsz 20..48 |
+|---|---|---|---|
+| docs page, 36 names, fill 0..1 | 12 144 | 28 668 | 37 432 |
+| admin menu, 25 names | 8 360 | 17 256 | 21 580 |
+
+The full Outlined font is 3 915 912 bytes.
+
 ## Running it
 
 It needs Node.js 22 or newer, Python 3.11 or newer and Yarn Classic 1.22.
 
 ```sh
 npx yarn@1.22.22 install --frozen-lockfile
+# npm test: the axis tests and a service started on a free port
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 cp .env.example .env
@@ -65,7 +100,12 @@ values):
 - `PORT`, `HOST`, `TRUST_PROXY`;
 - `SOURCE_MODE`, `SUBSET_FALLBACK_MODE`;
 - `PREBUILD_STATIC_SOURCES`, `PREBUILD_STATIC_FILLS`,
-  `PREBUILD_STATIC_GRADES`, `PREBUILD_STATIC_OPTICAL_SIZES`;
+  `PREBUILD_STATIC_GRADES`, `PREBUILD_STATIC_OPTICAL_SIZES` (values and
+  ranges: `0,-25..0`, `24,20..48`);
+- `PREBUILD_FRAMEWORK_RANGES` (default on; `0` skips),
+  `PREBUILD_FRAMEWORK_RANGE_WEIGHTS` (default `400,500`): the static sources
+  of the Framework's ranges, every type, fill 0 and mixed, built one at a time
+  after the service listens;
 - `FONT_SOURCE_PATH_OUTLINED`, `FONT_SOURCE_PATH_ROUNDED`,
   `FONT_SOURCE_PATH_SHARP`;
 - `CACHE_TTL_DAYS`, `CACHE_MAINTENANCE_INTERVAL_MS`, `MAX_ICON_COUNT`,
@@ -100,7 +140,8 @@ draws pixel-identical to the source font.
 
 ## Status
 
-Version 0.1.0. The code ran only on the production server and was in no
+Version 0.2.0 (grad and opsz ranges kept, old names as aliases).
+Version 0.1.0: the code ran only on the production server and was in no
 repository; this repository was created from it on 2026-10-19.
 `src/server.js` is the running version, with only its four comments
 translated to English.

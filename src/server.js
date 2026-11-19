@@ -6,6 +6,12 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { createSubsetPool, defaultPoolSize } from './subset-pool.js';
 import { createFont, woff2 } from 'fonteditor-core';
+import {
+  ALIAS_SUNSET,
+  AXIS_ALIASES,
+  normalizeAxes,
+  parseStaticAxisList,
+} from './axes.js';
 
 const app = express();
 const TRUST_PROXY = parseBooleanEnv(process.env.TRUST_PROXY, true);
@@ -38,18 +44,31 @@ const PREBUILD_STATIC_FILLS = (process.env.PREBUILD_STATIC_FILLS || '0,1,mixed')
   .map((value) => String(value).trim().toLowerCase())
   .map((value) => (value === '0+1' || value === 'both' ? 'mixed' : value))
   .filter((value) => value === '0' || value === '1' || value === 'mixed');
-const PREBUILD_STATIC_GRADES = (
-  process.env.PREBUILD_STATIC_GRADES || '-25,0,200'
+// Grades and optical sizes of the static sources prepared before the service
+// listens: values (a static instance at that point) and ranges (kept as a
+// variable axis, "-25..0", "20..48").
+const PREBUILD_STATIC_GRADES = parseStaticAxisList(
+  process.env.PREBUILD_STATIC_GRADES || '-25,0,200',
+  'GRAD',
+);
+const PREBUILD_STATIC_OPTICAL_SIZES = parseStaticAxisList(
+  process.env.PREBUILD_STATIC_OPTICAL_SIZES || '20,24,40,48',
+  'opsz',
+);
+// The axis ranges the SIMAI Framework asks for on every page (grad -25..0:
+// the light and the dark theme; opsz 20..48: every icon size), prepared
+// after the service listens, one source at a time, for these weights and
+// every type, fill 0 and mixed. A list asked for meanwhile builds its own
+// source. PREBUILD_FRAMEWORK_RANGES=0 skips it.
+const PREBUILD_FRAMEWORK_RANGES = process.env.PREBUILD_FRAMEWORK_RANGES !== '0';
+const FRAMEWORK_RANGE_WEIGHTS = String(
+  process.env.PREBUILD_FRAMEWORK_RANGE_WEIGHTS || '400,500',
 )
   .split(',')
   .map((value) => Number(value.trim()))
-  .filter((value) => [-25, 0, 200].includes(value));
-const PREBUILD_STATIC_OPTICAL_SIZES = (
-  process.env.PREBUILD_STATIC_OPTICAL_SIZES || '20,24,40,48'
-)
-  .split(',')
-  .map((value) => Number(value.trim()))
-  .filter((value) => [20, 24, 40, 48].includes(value));
+  .filter((value) => [100, 200, 300, 400, 500, 600, 700].includes(value));
+const FRAMEWORK_GRADE_RANGE = { mode: 'range', min: -25, max: 0, raw: '-25..0' };
+const FRAMEWORK_OPTICAL_SIZE_RANGE = { mode: 'range', min: 20, max: 48, raw: '20..48' };
 // Subset workers (R074): new lists are built off the main thread, this many
 // at a time. 0 builds in the main thread.
 const SUBSET_WORKERS = Math.max(
@@ -128,15 +147,6 @@ const DEFAULT_WEIGHT = 400;
 const DEFAULT_GRADE = 0;
 const DEFAULT_OPTICAL_SIZE = 24;
 const STATIC_WEIGHT_VALUES = [100, 200, 300, 400, 500, 600, 700];
-const AXIS_NAME_MAP = {
-  wght: 'wght',
-  weight: 'wght',
-  fill: 'FILL',
-  grad: 'GRAD',
-  opsz: 'opsz',
-  rond: 'ROND',
-};
-
 function parseBooleanEnv(raw, defaultValue = false) {
   if (raw == null || raw === '') return defaultValue;
   const value = String(raw).trim().toLowerCase();
@@ -185,153 +195,6 @@ function normalizeFontType(raw) {
 
 function getFontTypeConfig(type) {
   return FONT_TYPE_CONFIG[normalizeFontType(type)];
-}
-
-function parseAxisValue(raw, axisName) {
-  if (raw == null || raw === '') return null;
-  const value = String(raw).trim();
-  const lowerValue = value.toLowerCase();
-
-  const clampValue = (axisName, num) => {
-    if (axisName === 'wght') {
-      return Math.max(100, Math.min(700, num));
-    }
-    return num;
-  };
-
-  const isSupported = (axisName, num) => {
-    if (axisName === 'wght') {
-      return num >= 100 && num <= 700;
-    }
-    if (axisName === 'FILL') {
-      return num >= 0 && num <= 1;
-    }
-    if (axisName === 'GRAD') {
-      return num >= -25 && num <= 200;
-    }
-    if (axisName === 'opsz') {
-      return num >= 20 && num <= 48;
-    }
-    return true;
-  };
-
-  if (axisName === 'FILL') {
-    if (['true', 'yes', 'on', 'filled', 'both', 'mixed'].includes(lowerValue)) {
-      return {
-        mode: 'range',
-        min: 0,
-        max: 1,
-        raw: value,
-      };
-    }
-    if (['false', 'no', 'off', 'outline', 'outlined'].includes(lowerValue)) {
-      return {
-        mode: 'fixed',
-        value: 0,
-        raw: value,
-      };
-    }
-    if (['only', 'filled-only', 'fill-only'].includes(lowerValue)) {
-      return {
-        mode: 'fixed',
-        value: 1,
-        raw: value,
-      };
-    }
-  }
-
-  // A comma-separated list: 100,200,300,400,500,600,700
-  const listMatch = value.includes(',')
-    ? value.match(/^(-?\d+(?:\.\d+)?)(,(-?\d+(?:\.\d+)?))*$/)
-    : null;
-  if (listMatch) {
-    const values = Array.from(
-      new Set(
-        value
-          .split(',')
-          .map((v) => Number(v.trim()))
-          .filter((num) => Number.isFinite(num) && isSupported(axisName, num))
-          .map((num) => clampValue(axisName, num)),
-      ),
-    ).sort((a, b) => a - b);
-    if (!values.length) return null;
-    if (axisName === 'wght') {
-      return {
-        mode: 'list',
-        values,
-        raw: value,
-      };
-    }
-    if (axisName === 'FILL' && values.includes(0) && values.includes(1)) {
-      return {
-        mode: 'range',
-        min: 0,
-        max: 1,
-        raw: value,
-      };
-    }
-    const rangeValues = values.filter(
-      (num) => Number.isFinite(num) && isSupported(axisName, num),
-    );
-    if (!rangeValues.length) return null;
-    const min = Math.min(...rangeValues);
-    const max = Math.max(...rangeValues);
-    return {
-      mode: 'range',
-      min: clampValue(axisName, min),
-      max: clampValue(axisName, max),
-      raw: value,
-    };
-  }
-
-  // A range: 100..900
-  const rangeMatch = value.match(/^(-?\d+(?:\.\d+)?)\.\.(-?\d+(?:\.\d+)?)$/);
-  if (rangeMatch) {
-    let min = Number(rangeMatch[1]);
-    let max = Number(rangeMatch[2]);
-    if (!Number.isFinite(min) || !Number.isFinite(max)) {
-      throw new Error(`Invalid axis range for ${axisName}: ${value}`);
-    }
-    min = clampValue(axisName, Math.min(min, max));
-    max = clampValue(axisName, Math.max(min, max));
-    if (min > max) return null;
-    return {
-      mode: 'range',
-      min,
-      max,
-      raw: value,
-    };
-  }
-
-  // A single number
-  const num = Number(value);
-  if (!Number.isFinite(num)) {
-    throw new Error(`Invalid axis value for ${axisName}: ${value}`);
-  }
-  if (!isSupported(axisName, num)) {
-    return null;
-  }
-  return {
-    mode: 'fixed',
-    value: clampValue(axisName, num),
-    raw: value,
-  };
-}
-
-function normalizeAxes(query = {}) {
-  const axes = {};
-
-  Object.entries(query).forEach(([key, raw]) => {
-    if (raw == null || raw === '') return;
-    const normalizedKey = AXIS_NAME_MAP[String(key).toLowerCase()];
-    if (!normalizedKey) return;
-    const parsed = parseAxisValue(raw, normalizedKey);
-    if (parsed) {
-      axes[normalizedKey] = parsed;
-    }
-  });
-
-  return axes;
 }
 
 function applyDefaultAxes(axes = {}) {
@@ -446,8 +309,10 @@ function buildStaticSourceAxes(axes = {}, weight) {
             value: 0,
             raw: 'default',
           };
+  // A range stays a variable axis in the source (as FILL's does): an icon's
+  // own grade and optical size (font-variation-settings) pick the point.
   const gradeAxis =
-    axes.GRAD?.mode === 'fixed'
+    axes.GRAD?.mode === 'fixed' || axes.GRAD?.mode === 'range'
       ? axes.GRAD
       : {
           mode: 'fixed',
@@ -455,7 +320,7 @@ function buildStaticSourceAxes(axes = {}, weight) {
           raw: 'default',
         };
   const opticalSizeAxis =
-    axes.opsz?.mode === 'fixed'
+    axes.opsz?.mode === 'fixed' || axes.opsz?.mode === 'range'
       ? axes.opsz
       : {
           mode: 'fixed',
@@ -1042,7 +907,7 @@ async function readIconVocabulary() {
 // type at the default weight, fill 0 and mixed) and shapes the Framework's
 // vocabulary against them, so a new list of known names costs the subset and
 // its encoding only.
-async function warmIconVocabulary() {
+async function warmIconVocabulary(sourcePaths = null) {
   if (!PREBUILD_ICON_NAMES) {
     console.log('icon vocabulary warm-up skipped (PREBUILD_ICON_NAMES=0)');
     return;
@@ -1051,7 +916,7 @@ async function warmIconVocabulary() {
   const icons = await readIconVocabulary();
   if (!icons.length) return;
   const names = await fs.readdir(STATIC_SOURCE_CACHE_DIR).catch(() => []);
-  const sources = Object.keys(FONT_TYPE_CONFIG).flatMap((type) =>
+  const sources = sourcePaths || Object.keys(FONT_TYPE_CONFIG).flatMap((type) =>
     [
       `source-${type}-fill-0-grad-${DEFAULT_GRADE}-opsz-${DEFAULT_OPTICAL_SIZE}-wght-${DEFAULT_WEIGHT}-`,
       `source-${type}-fill-0-1-grad-${DEFAULT_GRADE}-opsz-${DEFAULT_OPTICAL_SIZE}-wght-${DEFAULT_WEIGHT}-`,
@@ -1321,18 +1186,8 @@ async function warmStaticWeightSources() {
 
   const start = performance.now();
   for (const [type, config] of Object.entries(FONT_TYPE_CONFIG)) {
-    for (const opticalSize of PREBUILD_STATIC_OPTICAL_SIZES) {
-      const opticalSizeAxis = {
-        mode: 'fixed',
-        value: opticalSize,
-        raw: String(opticalSize),
-      };
-      for (const grade of PREBUILD_STATIC_GRADES) {
-        const gradeAxis = {
-          mode: 'fixed',
-          value: grade,
-          raw: String(grade),
-        };
+    for (const opticalSizeAxis of PREBUILD_STATIC_OPTICAL_SIZES) {
+      for (const gradeAxis of PREBUILD_STATIC_GRADES) {
         for (const fill of PREBUILD_STATIC_FILLS) {
           const fillAxis =
             fill === 'mixed'
@@ -1370,13 +1225,52 @@ async function warmStaticWeightSources() {
       ',',
     )}; fills ${PREBUILD_STATIC_FILLS.join(
       ',',
-    )}; grades ${PREBUILD_STATIC_GRADES.join(
-      ',',
-    )}; optical sizes ${PREBUILD_STATIC_OPTICAL_SIZES.join(',')} (${formatDuration(
+    )}; grades ${formatAxisSpecs(PREBUILD_STATIC_GRADES)}; optical sizes ${formatAxisSpecs(
+      PREBUILD_STATIC_OPTICAL_SIZES,
+    )} (${formatDuration(
       start,
     )})`,
   );
   await warmDefaultStaticSourceIndex();
+}
+
+function formatAxisSpecs(specs = []) {
+  return specs
+    .map((spec) => (spec.mode === 'range' ? `${spec.min}..${spec.max}` : String(spec.value)))
+    .join(',');
+}
+
+// The static sources of the Framework's default ranges, after the service
+// listens (PREBUILD_FRAMEWORK_RANGES): each one is an instancer run of tens of
+// seconds, too long to keep /health waiting for.
+async function warmFrameworkRangeSources() {
+  if (SOURCE_MODE === 'raw' || !PREBUILD_FRAMEWORK_RANGES) return [];
+  const start = performance.now();
+  const ready = [];
+  for (const [type, config] of Object.entries(FONT_TYPE_CONFIG)) {
+    for (const fillAxis of [
+      { mode: 'fixed', value: 0, raw: '0' },
+      { mode: 'range', min: 0, max: 1, raw: 'mixed' },
+    ]) {
+      for (const weight of FRAMEWORK_RANGE_WEIGHTS) {
+        try {
+          const source = await ensureStaticWeightSource(
+            weight,
+            { FILL: fillAxis, GRAD: FRAMEWORK_GRADE_RANGE, opsz: FRAMEWORK_OPTICAL_SIZE_RANGE },
+            type,
+            config.sourcePath,
+          );
+          ready.push(source.path);
+        } catch (error) {
+          console.warn(`framework range source failed: ${type} ${weight}: ${error.message}`);
+        }
+      }
+    }
+  }
+  console.log(
+    `framework range sources ready: ${ready.length} (grad -25..0, opsz 20..48; weights ${FRAMEWORK_RANGE_WEIGHTS.join(',')}) (${formatDuration(start)})`,
+  );
+  return ready;
 }
 
 async function generateSubsetFont({
@@ -1846,8 +1740,10 @@ app.get('/health', async (_req, res) => {
     subsetFallbackMode: SUBSET_FALLBACK_MODE,
     prebuildStaticSources: PREBUILD_STATIC_SOURCES,
     prebuildStaticFills: PREBUILD_STATIC_FILLS,
-    prebuildStaticGrades: PREBUILD_STATIC_GRADES,
-    prebuildStaticOpticalSizes: PREBUILD_STATIC_OPTICAL_SIZES,
+    prebuildStaticGrades: formatAxisSpecs(PREBUILD_STATIC_GRADES).split(','),
+    prebuildStaticOpticalSizes: formatAxisSpecs(PREBUILD_STATIC_OPTICAL_SIZES).split(','),
+    prebuildFrameworkRanges: PREBUILD_FRAMEWORK_RANGES ? FRAMEWORK_RANGE_WEIGHTS : [],
+    axisAliases: { names: Object.keys(AXIS_ALIASES), until: ALIAS_SUNSET },
     sourceMode: SOURCE_MODE,
     inflight: inflight.size,
     subsetWorkers: subsetPool.stats(),
@@ -2086,7 +1982,10 @@ await warmDefaultStaticSourceIndex();
 await warmStaticWeightSources();
 // Not awaited: the service answers while the workers warm up; a list asked
 // for meanwhile shapes its own names.
-void warmIconVocabulary();
+void warmIconVocabulary().then(async () => {
+  const rangeSources = await warmFrameworkRangeSources();
+  if (rangeSources.length) await warmIconVocabulary(rangeSources);
+});
 scheduleCacheMaintenance();
 
 app.listen(PORT, HOST, () => {
@@ -2105,8 +2004,11 @@ app.listen(PORT, HOST, () => {
   console.log(`CACHE_MAINTENANCE_INTERVAL_MS=${CACHE_MAINTENANCE_INTERVAL_MS}`);
   console.log(`PREBUILD_STATIC_SOURCES=${PREBUILD_STATIC_SOURCES ? '1' : '0'}`);
   console.log(`PREBUILD_STATIC_FILLS=${PREBUILD_STATIC_FILLS.join(',')}`);
-  console.log(`PREBUILD_STATIC_GRADES=${PREBUILD_STATIC_GRADES.join(',')}`);
+  console.log(`PREBUILD_STATIC_GRADES=${formatAxisSpecs(PREBUILD_STATIC_GRADES)}`);
   console.log(
-    `PREBUILD_STATIC_OPTICAL_SIZES=${PREBUILD_STATIC_OPTICAL_SIZES.join(',')}`,
+    `PREBUILD_STATIC_OPTICAL_SIZES=${formatAxisSpecs(PREBUILD_STATIC_OPTICAL_SIZES)}`,
+  );
+  console.log(
+    `PREBUILD_FRAMEWORK_RANGES=${PREBUILD_FRAMEWORK_RANGES ? FRAMEWORK_RANGE_WEIGHTS.join(',') : '0'}`,
   );
 });

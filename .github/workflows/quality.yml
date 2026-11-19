@@ -26,6 +26,7 @@ jobs:
       - run: npx --yes yarn@1.22.22 install --frozen-lockfile --non-interactive
       - run: pip install -r requirements.txt
       - run: node --check src/server.js
+      - run: node --test test/
       - name: Start the service and request a subset
         run: |
           set -euo pipefail

@@ -1,13 +1,14 @@
 {
   "name": "simai-font-service",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "node --env-file=.env src/server.js",
     "start": "node --env-file=.env src/server.js",
     "start:dev": "node --env-file=.env src/server.js",
-    "start:prod": "node --env-file=.env.production src/server.js"
+    "start:prod": "node --env-file=.env.production src/server.js",
+    "test": "node --test test/"
   },
   "dependencies": {
     "cors": "^2.8.6",

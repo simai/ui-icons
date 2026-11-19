@@ -24,7 +24,11 @@ test('the old names grade and optical_size are aliases until 2027-01-01', () => 
   console.log = quiet;
   try {
     assert.deepEqual(normalizeAxes({ grade: '-25..0', optical_size: '20..48' }), normalizeAxes({ grad: '-25..0', opsz: '20..48' }));
-    assert.deepEqual(normalizeAxes({ 'optical-size': '40' }).opsz, { mode: 'fixed', value: 40, raw: '40' });
+    // An alias value is widened to the page range: one icon's grade never
+    // cuts the whole page's font at that point.
+    assert.deepEqual(normalizeAxes({ 'optical-size': '40' }).opsz, { mode: 'range', min: 20, max: 48, raw: '40' });
+    assert.deepEqual(normalizeAxes({ grade: '200' }).GRAD, { mode: 'range', min: -25, max: 200, raw: '200' });
+    assert.deepEqual(normalizeAxes({ grade: '500' }).GRAD, { mode: 'range', min: -25, max: 200, raw: '500' });
   } finally {
     console.log = log;
   }

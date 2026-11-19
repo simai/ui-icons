@@ -48,7 +48,12 @@ Material Symbols design space (GRAD -25..200, opsz 20..48) is clamped to it.
 - `grade`, `optical_size`, `optical-size` and `opticalsize` are read as
   aliases of `grad` and `opsz` until 2027-01-01 (the Framework sent those
   names, which the service never read); the service's own name wins when a
-  request carries both. Each alias read is logged once per process.
+  request carries both. Each alias read is logged once per process. The old
+  Framework sent an old name only for an author's own value (`grade=200` for
+  one icon) and sets every icon's point with `font-variation-settings`, so an
+  alias value is clamped to the design space and widened to the page range
+  (`grade=200` reads as `grad=-25..200`, `optical_size=40` as `opsz=20..48`):
+  read as one point it would cut the whole page's font at that icon's grade.
 
 Measured locally on 2026-11-19 (subset bytes, weights 400 and 500 together):
 

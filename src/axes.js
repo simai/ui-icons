@@ -6,7 +6,12 @@
 // an author's grade and every optical size reached it as nothing, and the font
 // came back at GRAD 0 and opsz 24 (ui-control evidence 2026-11-19-admin-menu-fw).
 // The old names are read as aliases of grad and opsz until 2027-01-01; the
-// service's own name wins when a request carries both.
+// service's own name wins when a request carries both. A Framework that sends
+// an old name sends it only for an author's own value (grade=200 for one icon)
+// and sets every icon's point with font-variation-settings, so an alias value
+// is widened to the page range the current Framework asks for (grad -25..0,
+// opsz 20..48): read as a fixed point it would cut the whole page's font at
+// that one icon's grade.
 
 export const AXIS_NAME_MAP = {
   wght: 'wght',
@@ -25,6 +30,33 @@ export const AXIS_ALIASES = {
   'optical-size': 'opsz',
   opticalsize: 'opsz',
 };
+
+// The ranges the SIMAI Framework asks for on every page.
+export const PAGE_RANGES = {
+  GRAD: [-25, 0],
+  opsz: [20, 48],
+};
+
+// An old name's value, clamped to the design space (the old Framework sent an
+// author's attribute as written: grade=500 draws as 200), widened to the page
+// range.
+function widenToPageRange(axis, raw) {
+  const range = PAGE_RANGES[axis];
+  const bounds = AXIS_BOUNDS[axis];
+  if (!range || !bounds) return null;
+  const points = String(raw)
+    .split(/,|\.\./)
+    .map((item) => Number(item.trim()))
+    .filter((num) => Number.isFinite(num))
+    .map((num) => Math.max(bounds[0], Math.min(bounds[1], num)));
+  if (!points.length) return null;
+  return {
+    mode: 'range',
+    min: Math.min(range[0], ...points),
+    max: Math.max(range[1], ...points),
+    raw,
+  };
+}
 
 // The Material Symbols design space: a value or range past it is clamped.
 export const AXIS_BOUNDS = {
@@ -215,7 +247,9 @@ export function normalizeAxes(query = {}) {
     if (!normalizedKey) return;
     // The service's own name wins over an old alias, in either order.
     if (alias && axes[normalizedKey] && !fromAlias[normalizedKey]) return;
-    const parsed = parseAxisValue(raw, normalizedKey);
+    const parsed = alias
+      ? widenToPageRange(normalizedKey, String(raw))
+      : parseAxisValue(raw, normalizedKey);
     if (parsed) {
       axes[normalizedKey] = parsed;
       fromAlias[normalizedKey] = Boolean(alias);
